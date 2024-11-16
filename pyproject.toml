@@ -1,0 +1,16 @@
+[project]
+name = "jobsearchresumeoptimizer1"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "bs4>=0.0.2",
+    "openai>=1.54.4",
+    "pypdf2>=3.0.1",
+    "pypdf>=5.1.0",
+    "requests>=2.32.3",
+    "docx>=0.2.4",
+    "reportlab>=4.2.5",
+    "python-docx>=1.1.2",
+]
