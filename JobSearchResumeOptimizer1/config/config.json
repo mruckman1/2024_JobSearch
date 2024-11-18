@@ -1,0 +1,14 @@
+{
+    "api_keys": {
+        "openai": "your_openai_api_key_here"
+    },
+    "settings": {
+        "max_keywords": 20,
+        "similarity_threshold": 0.75
+    },
+    "paths": {
+        "resume_dir": "data/resumes",
+        "context_dir": "data/context_docs",
+        "output_dir": "data/outputs"
+    }
+}
