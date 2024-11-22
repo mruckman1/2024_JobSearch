@@ -33,7 +33,9 @@ GithubRepos/
 *.egg
 MANIFEST
 archive/
-
+Github2Text_v1.py
+OAIJobUpdateScript5.py
+data/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -59,6 +61,8 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+/Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/data
+/Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/.streamlit
 
 # Translations
 *.mo
