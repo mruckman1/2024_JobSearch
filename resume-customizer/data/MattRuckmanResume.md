@@ -67,6 +67,9 @@ Results-driven Technical Product Manager with expertise in AI/ML, specializing i
 
 ## Extra Activities
 
+### Graph-based Retrieval Augmented Generation (RAG) and LLMs | Seattle, USA | April 2024
+Created and delivered LLM 101 presentation on internal and external usage of general agentic use cases to the Siri org
+
 ### Intro to Large language (LLM) models | Seattle, USA | June 2023
 Created and delivered LLM 101 presentation on internal and external usage of general agentic use cases to the Siri org
 

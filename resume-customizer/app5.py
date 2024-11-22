@@ -1,3 +1,4 @@
+# /Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/app4.py
 import streamlit as st
 import os
 import json
@@ -12,6 +13,11 @@ from typing import Dict, List, Tuple
 import time
 import pickle
 import difflib
+from io import BytesIO
+from markdown_docx_converter import convert_to_docx  # Assuming you saved the above code as markdown_docx_converter.py
+import html
+
+import re
 
 class ResumeCustomizer:
     def __init__(self):
@@ -131,7 +137,7 @@ class ResumeCustomizer:
 
             # Extract ATS-focused keywords with context analysis
             completion = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o-2024-11-20",
                 messages=[
                     {"role": "system", "content": """You are an experienced ATS system analyst and recruiter.
                     Analyze this job description and identify the 10 most important keywords/phrases that are 
@@ -225,39 +231,34 @@ class ResumeCustomizer:
             return ""
 
     def customize_resume(self, job_description: str, keywords: List[Dict]) -> str:
-        """Customize resume based on job description and keywords, using context information."""
         try:
             completion = self.client.chat.completions.create(
-                model="gpt-4o-2024-11-20",
+                model="gpt-4o-2024-11-20",  # Update to latest model
                 messages=[
                     {"role": "system", "content": """You are an expert resume optimization specialist.
                     Your task is to customize the resume to better match the job requirements while maintaining
                     complete truthfulness and authenticity. 
                     
-                    Focus on:
-                    1. Incorporating ATS keywords naturally
-                    2. Using exact phrases from the job description
-                    3. Matching the seniority level and tone
-                    4. Highlighting relevant experience that matches requirements
-                    
                     CRITICAL REQUIREMENTS:
-                    - Must maintain ALL experience entries from the original resume
-                    - Do not remove any positions or experience
-                    - Only enhance and modify existing content
-                    - Maintain the exact same sections and structure
-                    - Keep all dates and company information intact
+                    - The section headers must remain exactly as they are (###)
+                    - Each job entry must start with '### ' followed by the exact position, company, location and dates
+                    - Do not change any dates or company names
+                    - Only enhance descriptions and achievements
+                    - Keep all sections in the same order
+                    - Maintain markdown formatting
                     
-                    IMPORTANT OUTPUT INSTRUCTIONS:
-                    - Return ONLY the updated resume content in markdown format
-                    - Start directly with the resume header
-                    - Maintain exact markdown formatting with proper spacing
-                    - Include ALL original positions and experiences
-                    - Do not truncate or remove any sections
-                    - Do not add commentary or explanations"""},
+                    Format job entries exactly like this:
+                    ### Position | Company | Location | Dates
+                    
+                    IMPORTANT:
+                    - Return ONLY the updated resume content
+                    - Start with profile section
+                    - Maintain exact markdown formatting
+                    - Do not add commentary"""},
                     {"role": "user", "content": f"""Base Resume:
                     {self.base_resume}
                     
-                    Additional Context Information:
+                    Additional Context:
                     {self.context_info}
                     
                     Job Description:
@@ -266,43 +267,84 @@ class ResumeCustomizer:
                     ATS Keywords to Integrate:
                     {json.dumps(keywords, indent=2)}"""}
                 ],
-                temperature=0.5  # Lower temperature for more consistent output
+                temperature=0.3
             )
             
-            # Clean up any potential commentary before or after the resume
-            resume_content = completion.choices[0].message.content
-            resume_lines = [line for line in resume_content.split('\n') 
-                        if not line.strip().lower().startswith(('here', 'this resume', 'based on', 'i have', 'note:', 'summary:'))]
-            cleaned_resume = '\n'.join(resume_lines).strip()
+            resume_content = completion.choices[0].message.content.strip()
             
-            # Verify all original positions are present
-            original_positions = re.findall(r'###\s+[^#\n]+', self.base_resume)
-            updated_positions = re.findall(r'###\s+[^#\n]+', cleaned_resume)
+            # Clean up the resume content
+            resume_content = self._clean_resume_text(resume_content)
             
-            if len(original_positions) != len(updated_positions):
-                logging.error("Position count mismatch. Falling back to base resume with keyword integration")
+            # Verify critical elements are present
+            if not all(x in resume_content for x in ['## Profile', '## Work Experience', '## Education']):
+                logging.error("Missing required sections")
                 return self._fallback_resume_update(self.base_resume, keywords)
                 
-            return cleaned_resume
+            # Verify job entries format
+            job_entries = re.findall(r'###\s+[^|]+\|[^|]+\|[^|]+\|[^|\n]+', resume_content)
+            if not job_entries:
+                logging.error("Job entries not properly formatted")
+                return self._fallback_resume_update(self.base_resume, keywords)
+                
+            return resume_content
 
         except Exception as e:
-            st.error(f"Error customizing resume: {str(e)}")
+            logging.error(f"Error customizing resume: {str(e)}")
             return self._fallback_resume_update(self.base_resume, keywords)
 
+    def _clean_resume_text(self, text: str) -> str:
+        """Clean up resume text by removing HTML and fixing special characters."""
+        # Decode HTML entities
+        text = html.unescape(text)
+        
+        # Remove HTML links but keep the text
+        text = re.sub(r'<a href="[^"]*">(.*?)</a>', r'\1', text)
+        
+        # Fix spacing around headers
+        text = re.sub(r'(\n#{1,3}[^\n]+)\n([^\n])', r'\1\n\n\2', text)
+        
+        # Ensure proper spacing between sections
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        # Fix bullet points spacing
+        text = re.sub(r'(\n-[^\n]+)\n([^\n-])', r'\1\n\n\2', text)
+        
+        return text        
+
     def _fallback_resume_update(self, base_resume: str, keywords: List[Dict]) -> str:
-        """Simple fallback method to integrate keywords into base resume while maintaining structure."""
         try:
-            # Modify profile section to include key terms
+            # Clean up the base resume first
+            base_resume = self._clean_resume_text(base_resume)
             sections = base_resume.split('\n\n')
-            for i, section in enumerate(sections):
-                if section.startswith('## Profile'):
-                    profile_text = sections[i+1]
-                    keyword_terms = [kw['keyword'] for kw in keywords if kw['importance'] >= 8]
-                    enhanced_profile = f"Results-driven professional with expertise in {', '.join(keyword_terms[:3])}. " + profile_text
-                    sections[i+1] = enhanced_profile
-                    break
+            updated_sections = []
             
-            return '\n\n'.join(sections)
+            for section in sections:
+                if section.startswith('## Profile'):
+                    # Enhance profile with top keywords
+                    keyword_terms = [kw['keyword'] for kw in keywords if kw['importance'] >= 8]
+                    profile_text = sections[sections.index(section) + 1]
+                    enhanced_profile = (f"Results-driven professional with expertise in "
+                                    f"{', '.join(keyword_terms[:3])}. {profile_text}")
+                    updated_sections.extend([section, enhanced_profile])
+                    
+                elif section.startswith('### '):
+                    # Enhance job descriptions with relevant keywords
+                    relevant_keywords = [kw['keyword'] for kw in keywords if kw['importance'] >= 7]
+                    bullet_points = section.split('\n- ')
+                    enhanced_points = []
+                    for point in bullet_points:
+                        if not point.startswith('###'):
+                            for keyword in relevant_keywords:
+                                if keyword.lower() in point.lower():
+                                    point = f"Leveraged {keyword} to " + point
+                                    break
+                        enhanced_points.append(point)
+                    updated_sections.append('\n- '.join(enhanced_points))
+                    
+                else:
+                    updated_sections.append(section)
+                    
+            return '\n\n'.join(updated_sections)
             
         except Exception as e:
             logging.error(f"Error in fallback resume update: {str(e)}")
@@ -490,7 +532,7 @@ def main():
                 # Refresh counter display
                 st.sidebar.metric("Total Jobs Processed", customizer.job_counter)
     
-    # Display customized resume and changes
+# Display customized resume and changes
     if 'customized_resume' in st.session_state:
         # Display changes first
         st.header("Changes Made")
@@ -513,20 +555,39 @@ def main():
             height=400
         )
         
-        # Save buttons
+        # Save buttons - moved inside the if block
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Save Resume"):
-                filename = customizer.save_resume(
-                    edited_resume,
-                    st.session_state.company,
-                    st.session_state.position
-                )
-                st.success(f"Resume saved as {filename}")
-        
+                # Convert to DOCX
+                doc = convert_to_docx(edited_resume)
+                filename_base = f"{st.session_state.position}_{st.session_state.company}"
+                filename_md = f"outputs/{filename_base}.md"
+                filename_docx = f"outputs/{filename_base}.docx"
+                
+                # Save both versions
+                with open(filename_md, 'w', encoding='utf-8') as f:
+                    f.write(edited_resume)
+                doc.save(filename_docx)
+                st.success(f"Resume saved as {filename_md} and {filename_docx}")
+
         with col2:
+            # Create DOCX in memory for download
+            doc = convert_to_docx(edited_resume)
+            docx_bio = BytesIO()
+            doc.save(docx_bio)
+            docx_bio.seek(0)
+            
             st.download_button(
-                "Download Resume",
+                "Download Resume (DOCX)",
+                docx_bio,
+                file_name=f"{st.session_state.position}_{st.session_state.company}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            
+            # Also provide markdown download option
+            st.download_button(
+                "Download Resume (MD)",
                 edited_resume,
                 file_name=f"{st.session_state.position}_{st.session_state.company}.md",
                 mime="text/markdown"
