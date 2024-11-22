@@ -1,6 +1,7 @@
 # Matthew Ruckman
 **Phone:** (425) 365-2525  
 **Email:** mruckman1@gmail.com
+**Linkedin:** https://www.linkedin.com/in/matt-r-ba7626191/
 
 ## Profile
 

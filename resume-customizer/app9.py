@@ -16,16 +16,25 @@ import difflib
 from io import BytesIO
 from markdown_docx_converter import convert_to_docx  # Assuming you saved the above code as markdown_docx_converter.py
 import html
-
 import re
+from datetime import datetime, timedelta  # Add timedelta here
 
 class ResumeCustomizer:
     def __init__(self):
         self.setup_folders()
         self.setup_logging()
         self.counter_file = "data/job_counter.pkl"
+        self.timestamp_file = "data/counter_timestamp.pkl"
+        self.weekly_counter_file = "data/weekly_counter.pkl"
+        self.monthly_counter_file = "data/monthly_counter.pkl"
         self.load_counter()
+        self.load_timestamp()
+        self.load_weekly_counter()
+        self.load_monthly_counter()
         self.load_base_files()
+        
+        # Check if we need to reset weekly/monthly counters
+        self.check_and_reset_periodic_counters()
         
         # Initialize OpenAI client
         try:
@@ -70,6 +79,92 @@ class ResumeCustomizer:
                 self.job_counter = pickle.load(f)
         except FileNotFoundError:
             self.job_counter = 0
+            self.save_counter()  # Save initial counter
+
+    def load_timestamp(self):
+        """Load timestamp of last counter reset."""
+        try:
+            with open(self.timestamp_file, 'rb') as f:
+                self.counter_timestamp = pickle.load(f)
+        except FileNotFoundError:
+            self.counter_timestamp = datetime.now()
+            self.save_timestamp()
+
+    def save_timestamp(self):
+        """Save timestamp to pickle file."""
+        with open(self.timestamp_file, 'wb') as f:
+            pickle.dump(self.counter_timestamp, f)
+
+    def load_weekly_counter(self):
+        """Load weekly job counter from pickle file."""
+        try:
+            with open(self.weekly_counter_file, 'rb') as f:
+                self.weekly_counter = pickle.load(f)
+        except FileNotFoundError:
+            self.weekly_counter = 0
+            self.save_weekly_counter()
+
+    def load_monthly_counter(self):
+        """Load monthly job counter from pickle file."""
+        try:
+            with open(self.monthly_counter_file, 'rb') as f:
+                self.monthly_counter = pickle.load(f)
+        except FileNotFoundError:
+            self.monthly_counter = 0
+            self.save_monthly_counter()
+
+    def save_weekly_counter(self):
+        """Save weekly counter to pickle file."""
+        with open(self.weekly_counter_file, 'wb') as f:
+            pickle.dump(self.weekly_counter, f)
+
+    def save_monthly_counter(self):
+        """Save monthly counter to pickle file."""
+        with open(self.monthly_counter_file, 'wb') as f:
+            pickle.dump(self.monthly_counter, f)
+
+    def check_and_reset_periodic_counters(self):
+        """Check and reset weekly/monthly counters if needed."""
+        current_time = datetime.now()
+        
+        # Get the start of the current week (Monday)
+        week_start = current_time - timedelta(days=current_time.weekday())
+        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Get the start of the current month
+        month_start = current_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        # Check if the last reset was in a different week/month
+        if self.counter_timestamp.date() < week_start.date():
+            self.weekly_counter = 0
+            self.save_weekly_counter()
+            logging.info("Weekly counter reset")
+            
+        if self.counter_timestamp.date() < month_start.date():
+            self.monthly_counter = 0
+            self.save_monthly_counter()
+            logging.info("Monthly counter reset")
+
+    def reset_counter(self):
+        """Reset all counters and update timestamp."""
+        self.job_counter = 0
+        self.weekly_counter = 0
+        self.monthly_counter = 0
+        self.counter_timestamp = datetime.now()
+        self.save_counter()
+        self.save_timestamp()
+        self.save_weekly_counter()
+        self.save_monthly_counter()
+        logging.info("All counters reset and timestamp updated")
+
+    def increment_counters(self):
+        """Increment all counters."""
+        self.job_counter += 1
+        self.weekly_counter += 1
+        self.monthly_counter += 1
+        self.save_counter()
+        self.save_weekly_counter()
+        self.save_monthly_counter()
 
     def save_counter(self):
         """Save job description counter to pickle file."""
@@ -246,6 +341,7 @@ class ResumeCustomizer:
                     - Only enhance descriptions and achievements
                     - Keep all sections in the same order
                     - Maintain markdown formatting
+                    - Do not add additional certifications or expand on language skills
                     
                     Format job entries exactly like this:
                     ### Position | Company | Location | Dates
@@ -471,25 +567,58 @@ def main():
     # Initialize ResumeCustomizer
     customizer = ResumeCustomizer()
     
-    # Display job counter
-    st.sidebar.metric("Total Jobs Processed", customizer.job_counter)
+    # Display counters and timestamp in sidebar
+    st.sidebar.header("Application Tracking")
+    
+    # Create three columns for the metrics
+    col1, col2, col3 = st.sidebar.columns(3)
+    
+    with col1:
+        st.metric("Total", customizer.job_counter)
+    with col2:
+        st.metric("This Week", customizer.weekly_counter)
+    with col3:
+        st.metric("This Month", customizer.monthly_counter)
+    
+    # Format timestamp nicely
+    timestamp_str = customizer.counter_timestamp.strftime("%B %d, %Y")
+    st.sidebar.write(f"Tracking since: {timestamp_str}")
+    
+    # Add reset counter button to sidebar
+    if st.sidebar.button("Reset All Counters"):
+        customizer.reset_counter()
+        st.sidebar.success("All counters reset successfully!")
+        # Force a rerun to update the display
+        st.rerun()
     
     # Input section
     st.header("Job Description Input")
     input_method = st.radio("Choose input method:", ["URL", "Text"])
     
-    job_description = None
-    if input_method == "URL":
-        url = st.text_input("Enter job posting URL:")
-        if url:
-            job_description = customizer.scrape_job_description(url)
-    else:
-        job_description = st.text_area("Paste job description:")
+    # Wrap input in a form
+    with st.form(key='job_description_form'):
+        job_description = None
+        if input_method == "URL":
+            url = st.text_input("Enter job posting URL and press Enter:")
+            if url:
+                job_description = customizer.scrape_job_description(url)
+                # Hide submit button for URL input
+                st.markdown("""
+                    <style>
+                    [data-testid="stFormSubmitButton"] {
+                        display: none;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+        else:
+            job_description = st.text_area("Paste job description:")
+            
+        submit_button = st.form_submit_button("Process Job Description")
     
-    # Process job description
-    if job_description and st.button("Process Job Description"):
+    # Move processing logic outside the form but check for submission
+    if submit_button and job_description:
         with st.spinner("Processing..."):
-            # Extract information
+            # Rest of the processing code remains exactly the same...
             company, position, keywords = customizer.extract_job_info(job_description)
             
             if company and position:
@@ -525,12 +654,20 @@ def main():
                 st.session_state.position = position
                 st.session_state.changes = changes
                 
-                # Increment and save counter
-                customizer.job_counter += 1
-                customizer.save_counter()
+# Increment and save counters
+                customizer.increment_counters()
                 
-                # Refresh counter display
-                st.sidebar.metric("Total Jobs Processed", customizer.job_counter)
+                # Check if we need to reset periodic counters
+                customizer.check_and_reset_periodic_counters()
+                
+                # Update all metrics in sidebar
+                col1, col2, col3 = st.sidebar.columns(3)
+                with col1:
+                    st.metric("Total", customizer.job_counter)
+                with col2:
+                    st.metric("This Week", customizer.weekly_counter)
+                with col3:
+                    st.metric("This Month", customizer.monthly_counter)
     
 # Display customized resume and changes
     if 'customized_resume' in st.session_state:
@@ -555,7 +692,7 @@ def main():
             height=400
         )
         
-        # Save buttons - moved inside the if block
+        # Save buttons
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Save Resume"):
@@ -592,6 +729,16 @@ def main():
                 file_name=f"{st.session_state.position}_{st.session_state.company}.md",
                 mime="text/markdown"
             )
+        
+        # Add Clear button at the bottom
+        st.write("")  # Add some spacing
+        if st.button("Clear and Start New"):
+            # Clear all relevant session state variables
+            for key in ['customized_resume', 'company', 'position', 'changes']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            # Force a rerun to clear the UI
+            st.rerun()
 
 if __name__ == "__main__":
     main()
