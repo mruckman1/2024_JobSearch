@@ -1,4 +1,4 @@
-# /Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/app4.py
+# /Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/main.py
 import streamlit as st
 import os
 import json
@@ -20,28 +20,28 @@ import re
 from datetime import datetime, timedelta  # Add timedelta here
 import shutil
 from typing import Optional
+from database import JobApplicationsDB, JobApplication
 
 class ResumeCustomizer:
     def __init__(self):
+        self.db = JobApplicationsDB()
+        
+        # Define all folder paths
+        self.resume_folder = Path('Resume_Context/Resume')
+        self.context_folder = Path('Resume_Context/Context')
+        self.legacy_data_folder = Path('data')  # Add this line
+        
         self.setup_folders()
         self.setup_logging()
-        self.counter_file = "data/job_counter.pkl"
-        self.timestamp_file = "data/counter_timestamp.pkl"
-        self.weekly_counter_file = "data/weekly_counter.pkl"
-        self.monthly_counter_file = "data/monthly_counter.pkl"
-        self.load_counter()
-        self.load_timestamp()
-        self.load_weekly_counter()
-        self.load_monthly_counter()
         
-        # Add new attributes for current files
-        self.current_resume_file = "MattRuckmanResume.md"
-        self.current_context_file = "CombinedJobSearchContext.txt"
+        # Initialize with first available files or None
+        self.current_resume_file = None
+        self.current_context_file = None
+        self.base_resume = ""
+        self.context_info = ""
         
-        self.load_base_files()
-        
-        # Check if we need to reset weekly/monthly counters
-        self.check_and_reset_periodic_counters()
+        # Load available files
+        self.load_available_files()
         
         # Initialize OpenAI client
         try:
@@ -49,69 +49,27 @@ class ResumeCustomizer:
         except (FileNotFoundError, AttributeError):
             st.error("OpenAI API key not found. Please ensure you have created .streamlit/secrets.toml with your API key.")
             st.stop()
-
-    def setup_folders(self):
-        """Create necessary folder structure."""
-        folders = ['data', 'outputs', 'data/resumes', 'data/context']
-        for folder in folders:
-            Path(folder).mkdir(exist_ok=True)
-
-    def load_base_files(self):
-        """Load base resume and context files."""
-        try:
-            resume_path = f'data/resumes/{self.current_resume_file}'
-            context_path = f'data/context/{self.current_context_file}'
-            
-            # Check if files exist in subdirectories, if not, try legacy locations
-            if not Path(resume_path).exists():
-                resume_path = f'data/{self.current_resume_file}'
-            if not Path(context_path).exists():
-                context_path = f'data/{self.current_context_file}'
-            
-            with open(resume_path, 'r') as f:
-                self.base_resume = f.read()
-            with open(context_path, 'r') as f:
-                self.context_info = f.read()
-            logging.info("Base files loaded successfully")
-        except Exception as e:
-            logging.error(f"Error loading base files: {str(e)}")
-            raise
-
-    def update_base_file(self, file_type: str, uploaded_file) -> bool:
-        """Update base resume or context file."""
-        try:
-            if not uploaded_file:
-                return False
-
-            if file_type == 'resume':
-                target_dir = 'data/resumes'
-                current_file_attr = 'current_resume_file'
-            else:  # context
-                target_dir = 'data/context'
-                current_file_attr = 'current_context_file'
-
-            # Save the uploaded file
-            file_path = Path(target_dir) / uploaded_file.name
-            with open(file_path, 'wb') as f:
-                f.copy_to(f)  # Use copy_to instead of shutil.copyfileobj
-
-            # Update the current file attribute
-            setattr(self, current_file_attr, uploaded_file.name)
-            
-            # Reload the base files
-            self.load_base_files()
-            
-            return True
-        except Exception as e:
-            logging.error(f"Error updating {file_type} file: {str(e)}")
-        return False
-
-    def setup_folders(self):
-        """Create necessary folder structure."""
-        folders = ['data', 'outputs']
-        for folder in folders:
-            Path(folder).mkdir(exist_ok=True)
-
+    
+    def save_application_to_db(self, job_description: str, input_type: str, 
+                            company: str, position: str, keywords: str, 
+                            customized_resume: str, changes: str) -> int:
+        """Save the job application details to the database."""
+        application = JobApplication(
+            id=None,  # Will be set by the database
+            timestamp=datetime.now(),
+            company=company,
+            position=position,
+            input_type=input_type,
+            input_content=job_description,
+            generated_resume=customized_resume,
+            base_resume_file=self.current_resume_file,
+            context_file=self.current_context_file,
+            keywords=keywords,
+            changes=changes
+        )
+        
+        return self.db.save_application(application)    
+    
     def setup_logging(self):
         """Configure logging."""
         logging.basicConfig(
@@ -121,118 +79,179 @@ class ResumeCustomizer:
                 logging.FileHandler('resume_customizer.log'),
                 logging.StreamHandler()
             ]
-        )
+        )    
+    
+    def setup_folders(self):
+        """Create necessary folder structure while maintaining legacy folders."""
+        folders = [
+            'Resume_Context/Resume', 
+            'Resume_Context/Context', 
+            'outputs',
+            'data',  # Keep legacy folder
+            'data/resumes',  # Keep legacy folder
+            'data/context'   # Keep legacy folder
+        ]
+        for folder in folders:
+            Path(folder).mkdir(parents=True, exist_ok=True)
 
+    def get_available_files(self, folder_path: Path, legacy_path: Optional[Path] = None) -> list:
+        """Get list of available files with legacy path fallback."""
+        files = []
+        
+        # Check primary folder
+        if folder_path.exists():
+            files.extend([f.name for f in folder_path.glob('*') if f.suffix.lower() in ['.txt', '.md']])
+        
+        # Check legacy folder if provided
+        if legacy_path and legacy_path.exists():
+            legacy_files = [f.name for f in legacy_path.glob('*') if f.suffix.lower() in ['.txt', '.md']]
+            # Only add legacy files that aren't already in the new location
+            files.extend([f for f in legacy_files if f not in files])
+            
+        return sorted(files)
+
+    def load_available_files(self):
+        """Load files with fallback to legacy locations."""
+        # Check new locations first, then legacy
+        resume_files = self.get_available_files(
+            self.resume_folder, 
+            self.legacy_data_folder / 'resumes'
+        )
+        context_files = self.get_available_files(
+            self.context_folder, 
+            self.legacy_data_folder / 'context'
+        )
+        
+        # Set current files if available
+        if resume_files:
+            self.current_resume_file = resume_files[0]
+        if context_files:
+            self.current_context_file = context_files[0]
+            
+        # Load the files
+        self.load_base_files()    
+    
     def load_base_files(self):
-        """Load base resume and context files."""
+        """Load base files with fallback to legacy locations."""
         try:
-            with open('data/MattRuckmanResume.md', 'r') as f:
-                self.base_resume = f.read()
-            with open('data/CombinedJobSearchContext.txt', 'r') as f:
-                self.context_info = f.read()
+            if self.current_resume_file:
+                # Try new location first
+                resume_path = self.resume_folder / self.current_resume_file
+                if not resume_path.exists():
+                    # Try legacy locations
+                    legacy_paths = [
+                        self.legacy_data_folder / 'resumes' / self.current_resume_file,
+                        self.legacy_data_folder / self.current_resume_file
+                    ]
+                    for path in legacy_paths:
+                        if path.exists():
+                            resume_path = path
+                            break
+                
+                with open(resume_path, 'r', encoding='utf-8') as f:
+                    self.base_resume = f.read()
+            
+            if self.current_context_file:
+                # Try new location first
+                context_path = self.context_folder / self.current_context_file
+                if not context_path.exists():
+                    # Try legacy locations
+                    legacy_paths = [
+                        self.legacy_data_folder / 'context' / self.current_context_file,
+                        self.legacy_data_folder / self.current_context_file
+                    ]
+                    for path in legacy_paths:
+                        if path.exists():
+                            context_path = path
+                            break
+                
+                with open(context_path, 'r', encoding='utf-8') as f:
+                    self.context_info = f.read()
+                    
             logging.info("Base files loaded successfully")
+            
         except Exception as e:
             logging.error(f"Error loading base files: {str(e)}")
             raise
 
-    def load_counter(self):
-        """Load job description counter from pickle file."""
+    def update_base_file(self, file_type: str, uploaded_file) -> bool:
+        """Update base file with proper migration handling."""
         try:
-            with open(self.counter_file, 'rb') as f:
-                self.job_counter = pickle.load(f)
-        except FileNotFoundError:
-            self.job_counter = 0
-            self.save_counter()  # Save initial counter
+            if not uploaded_file:
+                return False
 
-    def load_timestamp(self):
-        """Load timestamp of last counter reset."""
-        try:
-            with open(self.timestamp_file, 'rb') as f:
-                self.counter_timestamp = pickle.load(f)
-        except FileNotFoundError:
-            self.counter_timestamp = datetime.now()
-            self.save_timestamp()
+            if file_type == 'resume':
+                target_dir = self.resume_folder
+                current_file_attr = 'current_resume_file'
+            else:  # context
+                target_dir = self.context_folder
+                current_file_attr = 'current_context_file'
 
-    def save_timestamp(self):
-        """Save timestamp to pickle file."""
-        with open(self.timestamp_file, 'wb') as f:
-            pickle.dump(self.counter_timestamp, f)
+            # Save the uploaded file to new location
+            file_path = target_dir / uploaded_file.name
+            with open(file_path, 'wb') as f:
+                f.write(uploaded_file.getbuffer())
 
-    def load_weekly_counter(self):
-        """Load weekly job counter from pickle file."""
-        try:
-            with open(self.weekly_counter_file, 'rb') as f:
-                self.weekly_counter = pickle.load(f)
-        except FileNotFoundError:
-            self.weekly_counter = 0
-            self.save_weekly_counter()
+            # Also save to legacy location for backward compatibility
+            legacy_dir = self.legacy_data_folder / ('resumes' if file_type == 'resume' else 'context')
+            legacy_path = legacy_dir / uploaded_file.name
+            shutil.copy2(file_path, legacy_path)
 
-    def load_monthly_counter(self):
-        """Load monthly job counter from pickle file."""
-        try:
-            with open(self.monthly_counter_file, 'rb') as f:
-                self.monthly_counter = pickle.load(f)
-        except FileNotFoundError:
-            self.monthly_counter = 0
-            self.save_monthly_counter()
-
-    def save_weekly_counter(self):
-        """Save weekly counter to pickle file."""
-        with open(self.weekly_counter_file, 'wb') as f:
-            pickle.dump(self.weekly_counter, f)
-
-    def save_monthly_counter(self):
-        """Save monthly counter to pickle file."""
-        with open(self.monthly_counter_file, 'wb') as f:
-            pickle.dump(self.monthly_counter, f)
-
-    def check_and_reset_periodic_counters(self):
-        """Check and reset weekly/monthly counters if needed."""
-        current_time = datetime.now()
-        
-        # Get the start of the current week (Monday)
-        week_start = current_time - timedelta(days=current_time.weekday())
-        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Get the start of the current month
-        month_start = current_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        
-        # Check if the last reset was in a different week/month
-        if self.counter_timestamp.date() < week_start.date():
-            self.weekly_counter = 0
-            self.save_weekly_counter()
-            logging.info("Weekly counter reset")
+            # Update the current file attribute
+            setattr(self, current_file_attr, uploaded_file.name)
             
-        if self.counter_timestamp.date() < month_start.date():
-            self.monthly_counter = 0
-            self.save_monthly_counter()
-            logging.info("Monthly counter reset")
+            # Reload the base files
+            self.load_base_files()
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error updating {file_type} file: {str(e)}")
+            return False
 
-    def reset_counter(self):
-        """Reset all counters and update timestamp."""
-        self.job_counter = 0
-        self.weekly_counter = 0
-        self.monthly_counter = 0
-        self.counter_timestamp = datetime.now()
-        self.save_counter()
-        self.save_timestamp()
-        self.save_weekly_counter()
-        self.save_monthly_counter()
-        logging.info("All counters reset and timestamp updated")
+    def get_file_options(self) -> tuple:
+        """Get lists of available files from both new and legacy locations."""
+        resume_files = self.get_available_files(
+            self.resume_folder,
+            self.legacy_data_folder / 'resumes'
+        )
+        context_files = self.get_available_files(
+            self.context_folder,
+            self.legacy_data_folder / 'context'
+        )
+        return resume_files, context_files
 
-    def increment_counters(self):
-        """Increment all counters."""
-        self.job_counter += 1
-        self.weekly_counter += 1
-        self.monthly_counter += 1
-        self.save_counter()
-        self.save_weekly_counter()
-        self.save_monthly_counter()
-
-    def save_counter(self):
-        """Save job description counter to pickle file."""
-        with open(self.counter_file, 'wb') as f:
-            pickle.dump(self.job_counter, f)
+    def switch_files(self, resume_file: str = None, context_file: str = None) -> bool:
+        """Switch files with validation."""
+        try:
+            if resume_file:
+                # Validate file exists in either location
+                resume_exists = (
+                    (self.resume_folder / resume_file).exists() or
+                    (self.legacy_data_folder / 'resumes' / resume_file).exists() or
+                    (self.legacy_data_folder / resume_file).exists()
+                )
+                if not resume_exists:
+                    raise FileNotFoundError(f"Resume file {resume_file} not found")
+                self.current_resume_file = resume_file
+                
+            if context_file:
+                # Validate file exists in either location
+                context_exists = (
+                    (self.context_folder / context_file).exists() or
+                    (self.legacy_data_folder / 'context' / context_file).exists() or
+                    (self.legacy_data_folder / context_file).exists()
+                )
+                if not context_exists:
+                    raise FileNotFoundError(f"Context file {context_file} not found")
+                self.current_context_file = context_file
+                
+            self.load_base_files()
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error switching files: {str(e)}")
+            return False
 
     def scrape_job_description(self, url: str) -> str:
         """Simple scraper to get all text content from any job posting URL."""
@@ -630,24 +649,55 @@ def main():
     # Initialize ResumeCustomizer
     customizer = ResumeCustomizer()
     
-    # Add file upload section in sidebar
+    # Add file selection section in sidebar
     st.sidebar.header("Current Files")
     
+    # Get available files
+    resume_files, context_files = customizer.get_file_options()
+    
+    # File selection
+    with st.sidebar.expander("Select Files", expanded=True):
+        # Resume selection
+        if resume_files:
+            selected_resume = st.selectbox(
+                "Select Resume",
+                options=resume_files,
+                index=resume_files.index(customizer.current_resume_file) if customizer.current_resume_file in resume_files else 0
+            )
+            if selected_resume != customizer.current_resume_file:
+                customizer.switch_files(resume_file=selected_resume)
+                st.rerun()
+        else:
+            st.warning("No resume files found in Resume folder")
+        
+        # Context selection
+        if context_files:
+            selected_context = st.selectbox(
+                "Select Context",
+                options=context_files,
+                index=context_files.index(customizer.current_context_file) if customizer.current_context_file in context_files else 0
+            )
+            if selected_context != customizer.current_context_file:
+                customizer.switch_files(context_file=selected_context)
+                st.rerun()
+        else:
+            st.warning("No context files found in Context folder")
+    
     # Display current files
-    st.sidebar.write(f"**Current Resume:** {customizer.current_resume_file}")
-    st.sidebar.write(f"**Current Context:** {customizer.current_context_file}")
+    st.sidebar.write(f"**Current Resume:** {customizer.current_resume_file or 'None'}")
+    st.sidebar.write(f"**Current Context:** {customizer.current_context_file or 'None'}")
     
     # Add file upload widgets
     with st.sidebar.expander("Upload New Files"):
         # Resume upload
-        new_resume = st.file_uploader("Upload New Base Resume", type=['md', 'txt'])
+        new_resume = st.file_uploader("Upload New Resume", type=['md', 'txt'])
         if new_resume is not None:
             if st.button("Update Resume"):
                 if customizer.update_base_file('resume', new_resume):
-                    st.success(f"Base resume updated to: {new_resume.name}")
+                    st.success(f"Resume updated to: {new_resume.name}")
                     st.rerun()
                 else:
-                    st.error("Failed to update base resume")
+                    st.error("Failed to update resume")
         
         # Context upload
         new_context = st.file_uploader("Upload New Context File", type=['txt'])
@@ -659,29 +709,49 @@ def main():
                 else:
                     st.error("Failed to update context file")
     
-    # Display counters and timestamp in sidebar
+    # Display application tracking in sidebar
     st.sidebar.header("Application Tracking")
+    
+    # Get counters from database
+    total_count, weekly_count, monthly_count = customizer.db.get_counters()
+    tracking_start = customizer.db.get_tracking_start_date()
     
     # Create three columns for the metrics
     col1, col2, col3 = st.sidebar.columns(3)
-    
     with col1:
-        st.metric("Total", customizer.job_counter)
+        st.metric("Total", total_count)
     with col2:
-        st.metric("This Week", customizer.weekly_counter)
+        st.metric("This Week", weekly_count)
     with col3:
-        st.metric("This Month", customizer.monthly_counter)
+        st.metric("This Month", monthly_count)
     
     # Format timestamp nicely
-    timestamp_str = customizer.counter_timestamp.strftime("%B %d, %Y")
+    timestamp_str = tracking_start.strftime("%B %d, %Y")
     st.sidebar.write(f"Tracking since: {timestamp_str}")
-    
-    # Add reset counter button to sidebar
-    if st.sidebar.button("Reset All Counters"):
-        customizer.reset_counter()
-        st.sidebar.success("All counters reset successfully!")
-        # Force a rerun to update the display
-        st.rerun()
+
+    # Add application history section in sidebar
+    st.sidebar.header("Recent Applications")
+    recent_apps = customizer.db.get_recent_applications(5)
+    for app in recent_apps:
+        with st.sidebar.expander(f"{app.company} - {app.position}"):
+            st.write(f"Date: {app.timestamp.strftime('%Y-%m-%d %H:%M')}")
+            st.write(f"Input Type: {app.input_type}")
+            if st.button("Load This Application", key=f"load_{app.id}"):
+                st.session_state.customized_resume = app.generated_resume
+                st.session_state.company = app.company
+                st.session_state.position = app.position
+                st.session_state.changes = json.loads(app.changes)
+                st.rerun()
+
+    # Add statistics
+    st.sidebar.header("Application Statistics")
+    stats = customizer.db.get_statistics()
+    st.sidebar.metric("Total Applications", stats['total_applications'])
+
+    # Show top companies
+    st.sidebar.subheader("Top Companies")
+    for company, count in stats['top_companies'].items():
+        st.sidebar.text(f"{company}: {count} applications")
     
     # Input section
     st.header("Job Description Input")
@@ -694,7 +764,6 @@ def main():
             url = st.text_input("Enter job posting URL and press Enter:")
             if url:
                 job_description = customizer.scrape_job_description(url)
-                # Hide submit button for URL input
                 st.markdown("""
                     <style>
                     [data-testid="stFormSubmitButton"] {
@@ -710,7 +779,6 @@ def main():
     # Move processing logic outside the form but check for submission
     if submit_button and job_description:
         with st.spinner("Processing..."):
-            # Rest of the processing code remains exactly the same...
             company, position, keywords = customizer.extract_job_info(job_description)
             
             if company and position:
@@ -740,28 +808,27 @@ def main():
                 # Analyze changes
                 changes = customizer.analyze_changes(original_resume, customized_resume)
                 
+                # Save application to database
+                application_id = customizer.save_application_to_db(
+                    job_description=job_description,
+                    input_type='url' if input_method == "URL" else 'text',
+                    company=company,
+                    position=position,
+                    keywords=json.dumps(keywords),
+                    customized_resume=customized_resume,
+                    changes=json.dumps(changes)
+                )
+                
                 # Save to session state
                 st.session_state.customized_resume = customized_resume
                 st.session_state.company = company
                 st.session_state.position = position
                 st.session_state.changes = changes
                 
-# Increment and save counters
-                customizer.increment_counters()
-                
-                # Check if we need to reset periodic counters
-                customizer.check_and_reset_periodic_counters()
-                
-                # Update all metrics in sidebar
-                col1, col2, col3 = st.sidebar.columns(3)
-                with col1:
-                    st.metric("Total", customizer.job_counter)
-                with col2:
-                    st.metric("This Week", customizer.weekly_counter)
-                with col3:
-                    st.metric("This Month", customizer.monthly_counter)
+                # Refresh the sidebar metrics
+                st.rerun()
     
-# Display customized resume and changes
+    # Display customized resume and changes
     if 'customized_resume' in st.session_state:
         # Display changes first
         st.header("Changes Made")
@@ -829,7 +896,6 @@ def main():
             for key in ['customized_resume', 'company', 'position', 'changes']:
                 if key in st.session_state:
                     del st.session_state[key]
-            # Force a rerun to clear the UI
             st.rerun()
 
 if __name__ == "__main__":
