@@ -19,10 +19,21 @@ The Resume Customizer application allows you to:
 
 *   Python 3.8+
 *   `uv` package manager
+*   Git
 
 ## Installation and Setup
 
-1. **Install `uv`:**
+1. **Download the Repository:**
+
+    First, clone the repository to your local machine using Git:
+
+    ```bash
+    git clone https://github.com/mruckman1/2024_JobSearch.git
+    ```
+
+    This will create a new directory named `2024_JobSearch` containing the project files.
+
+2. **Install `uv`:**
 
     ```bash
     # On macOS and Linux.
@@ -45,12 +56,12 @@ The Resume Customizer application allows you to:
     uv self update
     ```
 
-2. **Create and activate a virtual environment:**
+3. **Create and activate a virtual environment:**
 
-    Navigate to the `resume-customizer` directory in your terminal:
+    Navigate to the `resume-customizer` directory within the cloned repository:
 
     ```bash
-    cd resume-customizer
+    cd 2024_JobSearch/resume-customizer
     ```
 
     Create a virtual environment using `uv`:
@@ -69,11 +80,12 @@ The Resume Customizer application allows you to:
     .venv\Scripts\activate
     ```
 
-3. **Install dependencies:**
+4. **Install dependencies:**
 
     ```bash
     uv pip install -r requirements.txt
     ```
+
     (Assuming you have a `requirements.txt` file in the `resume-customizer` directory. If not, you'll need to create one with the necessary packages: `streamlit`, `openai`, `python-docx`, `beautifulsoup4`, `requests`, `markdown`, etc.)
 
 ## Getting an OpenAI API Key
@@ -132,30 +144,36 @@ The Resume Customizer application allows you to:
 ## Application Walkthrough
 
 1. **File Selection (Sidebar):**
+
     *   Choose your base resume and context files from the dropdown menus. These files should be located in the `Resume_Context/Resume` and `Resume_Context/Context` folders, respectively.
     *   Upload new resume or context files using the "Upload New Files" section.
 
 2. **Application Tracking (Sidebar):**
+
     *   View your job application statistics: total applications, daily, weekly, and monthly counts.
     *   See a list of your recent applications. You can load a previous application to review the generated resume and changes.
 
 3. **Job Description Input:**
+
     *   Select your input method: "URL" or "Text".
     *   If you choose "URL", paste the job posting URL into the text box and press Enter.
     *   If you choose "Text", paste the job description into the text area.
     *   Click the "Process Job Description" button.
 
 4. **Processing and Results:**
+
     *   The application will extract the company name, position title, and ATS keywords.
     *   It will then customize your resume based on the job description and keywords.
     *   The "Changes Made" section will display a detailed analysis of the modifications made to your resume.
     *   The "Customized Resume" section will show the updated resume. You can edit it directly in the text area.
 
 5. **Saving and Downloading:**
+
     *   Click the "Save Resume" button to save the customized resume as both a Markdown file (.md) and a Word document (.docx) in the `outputs` folder.
     *   Click the "Download Resume (DOCX)" or "Download Resume (MD)" buttons to download the respective file types.
 
 6. **Starting a New Application:**
+
     *   Click the "Clear and Start New" button to clear the current job description and generated resume, allowing you to start fresh with a new application.
 
 ## Notes
@@ -164,3 +182,5 @@ The Resume Customizer application allows you to:
 *   Error handling and fallback mechanisms are in place to ensure the application continues to function even if certain API calls or parsing operations fail.
 *   The application log (`resume_customizer.log`) provides detailed information about the processing steps and any errors encountered.
 *   The database (`job_applications.db`) is stored in the `data` directory.
+
+This README provides a thorough guide to setting up and using the Resume Customizer application. Remember to replace placeholder API keys with your actual key and adjust paths as necessary based on your specific setup.
