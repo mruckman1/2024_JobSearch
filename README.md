@@ -17,7 +17,7 @@ The Resume Customizer application allows you to:
 
 ## Prerequisites
 
-*   Python 3.8+
+*   Python 3.11+
 *   `uv` package manager
 *   Git
 
