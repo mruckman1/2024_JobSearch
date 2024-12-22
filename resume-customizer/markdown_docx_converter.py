@@ -1,4 +1,4 @@
-# /Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/markdown_docx_converter.py
+# resume-customizer/markdown_docx_converter.py
 from docx import Document
 from docx.shared import Pt, Inches
 import markdown
@@ -20,60 +20,48 @@ def convert_to_docx(markdown_text):
     # Clean up ampersands and other special characters before conversion
     cleaned_text = html.unescape(markdown_text)
     
-    # Convert Markdown to HTML
-    html_text = markdown.markdown(cleaned_text)
+    # Split the content into lines for better control
+    lines = cleaned_text.split('\n')
     
-    # Clean up any remaining HTML entities
-    html_text = html.unescape(html_text)
-    
-    # Split content by sections (headers)
-    sections = re.split(r'(<h[1-3]>.*?</h[1-3]>)', html_text)
-    
-    current_level = 0
-    for section in sections:
-        if section.strip():
-            # Handle headers
-            if section.startswith('<h1>'):
-                text = re.sub('<[^<]+?>', '', section)
-                doc.add_heading(text, level=1)
-            elif section.startswith('<h2>'):
-                text = re.sub('<[^<]+?>', '', section)
-                doc.add_heading(text, level=2)
-            elif section.startswith('<h3>'):
-                text = re.sub('<[^<]+?>', '', section)
-                heading_text = html.unescape(text)  # Additional unescape for headers
-                
-                # Split and handle job entry headers specially
-                if '|' in heading_text:
-                    parts = [part.strip() for part in heading_text.split('|')]
-                    heading_text = ' | '.join(parts)
-                
-                doc.add_heading(heading_text, level=3)
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Handle headers
+        if line.startswith('###'):
+            # Remove markdown header symbols and clean the text
+            header_text = line.replace('###', '').strip()
+            # Unescape any remaining HTML entities
+            header_text = html.unescape(header_text)
+            heading = doc.add_heading(header_text, level=3)
+            
+        elif line.startswith('##'):
+            # Remove markdown header symbols and clean the text
+            header_text = line.replace('##', '').strip()
+            heading = doc.add_heading(header_text, level=2)
+            
+        elif line.startswith('#'):
+            # Remove markdown header symbols and clean the text
+            header_text = line.replace('#', '').strip()
+            heading = doc.add_heading(header_text, level=1)
+            
+        else:
+            # Handle bullet points and regular text
+            if line.lstrip().startswith('- ') or line.lstrip().startswith('* '):
+                # This is a bullet point
+                para = doc.add_paragraph(style='List Bullet')
+                # Remove the bullet point character and clean the text
+                text = line.lstrip('- ').lstrip('* ').strip()
+                para.text = html.unescape(text)
             else:
-                # Handle regular paragraphs and lists
+                # Regular paragraph
                 para = doc.add_paragraph()
-                
-                # Convert HTML lists to plain text bullets
-                text = re.sub(r'<ul>|</ul>|<li>|</li>', '', section)
-                text = re.sub(r'<p>|</p>', '', text)
-                text = re.sub(r'<[^<]+?>', '', text)  # Remove any other HTML tags
-                
-                # Final cleanup of any remaining HTML entities
-                text = html.unescape(text)
-                
-                # Handle bullet points
-                if text.strip().startswith('•'):
-                    para.style = 'List Bullet'
-                    text = text.replace('•', '').strip()
-                elif text.strip().startswith('-'):
-                    para.style = 'List Bullet'
-                    text = text.replace('-', '').strip()
-                
-                para.text = text.strip()
-                
-                # Set font
-                for run in para.runs:
-                    run.font.size = Pt(11)
-                    run.font.name = 'Calibri'
-
+                para.text = html.unescape(line)
+            
+            # Set font for the paragraph
+            for run in para.runs:
+                run.font.size = Pt(11)
+                run.font.name = 'Calibri'
+    
     return doc

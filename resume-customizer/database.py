@@ -168,6 +168,38 @@ class JobApplicationsDB:
                 changes=row['changes']
             ) for row in cursor.fetchall()]
 
+    def get_counters(self) -> Tuple[int, int, int, int]:
+        """Get total, daily, weekly, and monthly application counts."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Calculate date ranges
+            now = datetime.now()
+            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            week_start = now - timedelta(days=now.weekday())
+            week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            # Get counts
+            cursor.execute('SELECT COUNT(*) FROM job_applications')
+            total_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM job_applications WHERE timestamp >= ?', 
+                        (day_start,))
+            daily_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM job_applications WHERE timestamp >= ?', 
+                        (week_start,))
+            weekly_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM job_applications WHERE timestamp >= ?', 
+                        (month_start,))
+            monthly_count = cursor.fetchone()[0]
+            
+            return total_count, daily_count, weekly_count, monthly_count
+
     def get_statistics(self) -> Dict:
         """Get application statistics."""
         with sqlite3.connect(self.db_path) as conn:

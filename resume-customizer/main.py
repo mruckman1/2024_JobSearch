@@ -1,4 +1,4 @@
-# /Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/main.py
+# resume-customizer/main.py
 import streamlit as st
 import os
 import json
@@ -14,7 +14,7 @@ import time
 import pickle
 import difflib
 from io import BytesIO
-from markdown_docx_converter import convert_to_docx  # Assuming you saved the above code as markdown_docx_converter.py
+from markdown_docx_converter import convert_to_docx  
 import html
 import re
 from datetime import datetime, timedelta  # Add timedelta here
@@ -422,8 +422,9 @@ class ResumeCustomizer:
                     - Do not change any dates or company names
                     - Only enhance descriptions and achievements
                     - Keep all sections in the same order
+                    - Use bullet points for the experience subsections
                     - Maintain markdown formatting
-                    - Do not add additional certifications or expand on language skills
+                    - Do not add additional certifications or expand on Korean language skills
                     
                     Format job entries exactly like this:
                     ### Position | Company | Location | Dates
@@ -711,20 +712,22 @@ def main():
     
     # Display application tracking in sidebar
     st.sidebar.header("Application Tracking")
-    
+
     # Get counters from database
-    total_count, weekly_count, monthly_count = customizer.db.get_counters()
+    total_count, daily_count, weekly_count, monthly_count = customizer.db.get_counters()
     tracking_start = customizer.db.get_tracking_start_date()
-    
-    # Create three columns for the metrics
-    col1, col2, col3 = st.sidebar.columns(3)
+
+    # Create four columns for the metrics
+    col1, col2, col3, col4 = st.sidebar.columns(4)
     with col1:
         st.metric("Total", total_count)
     with col2:
-        st.metric("This Week", weekly_count)
+        st.metric("This Day", daily_count)
     with col3:
+        st.metric("This Week", weekly_count)
+    with col4:
         st.metric("This Month", monthly_count)
-    
+
     # Format timestamp nicely
     timestamp_str = tracking_start.strftime("%B %d, %Y")
     st.sidebar.write(f"Tracking since: {timestamp_str}")
@@ -757,13 +760,20 @@ def main():
     st.header("Job Description Input")
     input_method = st.radio("Choose input method:", ["URL", "Text"])
     
+    # Initialize session state for input fields if not exists
+    if 'url_input' not in st.session_state:
+        st.session_state.url_input = ""
+    if 'text_input' not in st.session_state:
+        st.session_state.text_input = ""
+    
     # Wrap input in a form
     with st.form(key='job_description_form'):
         job_description = None
         if input_method == "URL":
-            url = st.text_input("Enter job posting URL and press Enter:")
+            url = st.text_input("Enter job posting URL and press Enter:", value=st.session_state.url_input)
             if url:
                 job_description = customizer.scrape_job_description(url)
+                st.session_state.url_input = url
                 st.markdown("""
                     <style>
                     [data-testid="stFormSubmitButton"] {
@@ -772,7 +782,9 @@ def main():
                     </style>
                     """, unsafe_allow_html=True)
         else:
-            job_description = st.text_area("Paste job description:")
+            text_input = st.text_area("Paste job description:", value=st.session_state.text_input)
+            job_description = text_input
+            st.session_state.text_input = text_input
             
         submit_button = st.form_submit_button("Process Job Description")
     
@@ -893,7 +905,11 @@ def main():
         st.write("")  # Add some spacing
         if st.button("Clear and Start New"):
             # Clear all relevant session state variables
-            for key in ['customized_resume', 'company', 'position', 'changes']:
+            keys_to_clear = [
+                'customized_resume', 'company', 'position', 'changes',
+                'url_input', 'text_input'  # Added input field clearing
+            ]
+            for key in keys_to_clear:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
