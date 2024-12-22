@@ -13,7 +13,6 @@ develop-eggs/
 archive/
 .env
 .env/
-Outputs/
 Context_Files/
 Base_Resume/
 dist/
@@ -33,9 +32,7 @@ GithubRepos/
 *.egg
 MANIFEST
 archive/
-Github2Text_v1.py
-OAIJobUpdateScript5.py
-data/
+
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -63,6 +60,8 @@ coverage.xml
 cover/
 /Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/data
 /Users/mruckman1/Desktop/JobSearchResumeOptimizer1/resume-customizer/.streamlit
+.toml
+.streamlit/
 
 # Translations
 *.mo
@@ -83,6 +82,8 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+Reports/
+resume-customizer/ReportDBQuery2.py
 
 # PyBuilder
 .pybuilder/
